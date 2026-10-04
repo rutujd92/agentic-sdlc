@@ -23,3 +23,5 @@ generated_code = true
 dotnet_diagnostic.CA1707.severity = none
 # xUnit IAsyncLifetime owns disposal of fixtures in tests.
 dotnet_diagnostic.CA1001.severity = none
+# Inline arrays read better than static fields in assertions.
+dotnet_diagnostic.CA1861.severity = none

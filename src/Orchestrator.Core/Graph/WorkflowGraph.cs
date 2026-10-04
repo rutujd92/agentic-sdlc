@@ -50,6 +50,25 @@ public sealed class WorkflowGraph
         return Nodes.Where(n => n.DependsOn.Contains(id, StringComparer.Ordinal)).ToArray();
     }
 
+    /// <summary>Every node upstream of <paramref name="id"/>, in topological order. These are a node's inputs.</summary>
+    public IReadOnlyList<WorkflowNode> TransitiveDependencies(string id)
+    {
+        var found = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Queue<string>(Get(id).DependsOn);
+        while (pending.TryDequeue(out var current))
+        {
+            if (found.Add(current))
+            {
+                foreach (var dependency in Get(current).DependsOn)
+                {
+                    pending.Enqueue(dependency);
+                }
+            }
+        }
+
+        return TopologicalOrder.Where(n => found.Contains(n.Id)).ToArray();
+    }
+
     /// <summary>Every node downstream of <paramref name="id"/>, in topological order. Used to invalidate work on re-plan.</summary>
     public IReadOnlyList<WorkflowNode> TransitiveDependents(string id)
     {
