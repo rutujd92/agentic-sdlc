@@ -1,12 +1,15 @@
 using System.Globalization;
 using Orchestrator.Core.Events;
 using Orchestrator.Core.Execution;
+using Orchestrator.Core.Governance;
 using Orchestrator.Core.Graph;
 using Orchestrator.Core.State;
 using Orchestrator.Infrastructure.Agents;
 using Orchestrator.Infrastructure.Storage;
+using Orchestrator.Infrastructure.Workspace;
 
 var runsRoot = Path.Combine(Directory.GetCurrentDirectory(), "runs");
+var policyPath = Path.Combine(Directory.GetCurrentDirectory(), "policies.json");
 
 switch (args.FirstOrDefault())
 {
@@ -14,7 +17,11 @@ switch (args.FirstOrDefault())
         PrintGraph(StandardSdlcGraph.Create());
         return 0;
     case "run" when args.Length >= 2:
-        return await RunAsync(args[1], OptionValues(args, "--fail"), OptionValues(args, "--flaky"), DelayOption(args));
+        return await RunAsync(args[1], OptionValues(args, "--fail"), OptionValues(args, "--flaky"), OptionValues(args, "--with"), DelayOption(args));
+    case "approve" when args.Length >= 3:
+        return await DecideAsync(args[1], args[2], approve: true, OptionValues(args, "--note").FirstOrDefault());
+    case "reject" when args.Length >= 3:
+        return await DecideAsync(args[1], args[2], approve: false, OptionValues(args, "--reason").FirstOrDefault());
     case "resume" when args.Length >= 2:
         return await ResumeAsync(args[1], DelayOption(args));
     case "stop" when args.Length >= 2:
@@ -33,13 +40,16 @@ switch (args.FirstOrDefault())
         Console.WriteLine("      --fail <node>                  Node always fails (retries, fallback, then skip downstream)");
         Console.WriteLine("      --flaky <node>                 Node fails on its first attempt only (shows retry)");
         Console.WriteLine("      --delay <ms>                   Simulated work per node (default 400)");
+        Console.WriteLine("      --with migration|package|secret  Add a policy-relevant change to the implement diff");
+        Console.WriteLine("  approve <runId> <node> [--note t]  Approve a paused node (as git user.email) and resume");
+        Console.WriteLine("  reject <runId> <node> --reason t   Reject a paused node and resume (fails it, rolls back)");
         Console.WriteLine("  stop <runId>                       Safe-stop a running run at the next node boundary");
         Console.WriteLine("  resume <runId> [--delay <ms>]      Continue a stopped run from its event log");
         Console.WriteLine("  status <runId>                     Rebuild and show a run's state from its event log");
         return args.Length == 0 ? 0 : 1;
 }
 
-async Task<int> RunAsync(string changeRequest, IReadOnlySet<string> failing, IReadOnlySet<string> flaky, TimeSpan delay)
+async Task<int> RunAsync(string changeRequest, IReadOnlySet<string> failing, IReadOnlySet<string> flaky, IReadOnlySet<string> extras, TimeSpan delay)
 {
     var runId = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..4]}";
     Console.WriteLine($"Run {runId}");
@@ -48,7 +58,7 @@ async Task<int> RunAsync(string changeRequest, IReadOnlySet<string> failing, IRe
     Console.WriteLine();
 
     var started = DateTimeOffset.UtcNow;
-    var state = await CreateEngine(started).RunAsync(runId, changeRequest, SimulatedWorkflow(delay, failing, flaky), CancellationToken.None);
+    var state = await CreateEngine(started).RunAsync(runId, changeRequest, await SimulatedWorkflowAsync(delay, failing, flaky, extras), CancellationToken.None);
     return Summarize(runId, state, started);
 }
 
@@ -63,9 +73,49 @@ async Task<int> ResumeAsync(string runId, TimeSpan delay)
     Console.WriteLine($"Resuming {runId}");
     Console.WriteLine();
     var started = DateTimeOffset.UtcNow;
-    var state = await CreateEngine(started).ResumeAsync(runId, SimulatedWorkflow(delay, new HashSet<string>(), new HashSet<string>()), CancellationToken.None);
+    var state = await CreateEngine(started).ResumeAsync(runId, await SimulatedWorkflowAsync(delay, Empty(), Empty(), Empty()), CancellationToken.None);
     return Summarize(runId, state, started);
 }
+
+async Task<int> DecideAsync(string runId, string nodeId, bool approve, string? text)
+{
+    if (!approve && string.IsNullOrWhiteSpace(text))
+    {
+        Console.Error.WriteLine("A rejection needs --reason \"...\".");
+        return 1;
+    }
+
+    var approver = await GitUserEmailAsync();
+    var approvals = new ApprovalService(new JsonlEventStore(runsRoot), TimeProvider.System);
+    try
+    {
+        if (approve)
+        {
+            await approvals.GrantAsync(runId, nodeId, approver, text, CancellationToken.None);
+        }
+        else
+        {
+            await approvals.RejectAsync(runId, nodeId, approver, text!, CancellationToken.None);
+        }
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    Console.WriteLine($"{(approve ? "Approved" : "Rejected")} '{nodeId}' as {approver}.");
+    return await ResumeAsync(runId, TimeSpan.FromMilliseconds(400));
+}
+
+static async Task<string> GitUserEmailAsync()
+{
+    var result = await ProcessRunner.RunAsync("git", Directory.GetCurrentDirectory(), ["config", "user.email"], CancellationToken.None);
+    var email = result.StandardOutput.Trim();
+    return result.Succeeded && email.Length > 0 ? email : Environment.UserName;
+}
+
+static HashSet<string> Empty() => new(StringComparer.Ordinal);
 
 OrchestrationEngine CreateEngine(DateTimeOffset started) => new(
     new JsonlEventStore(runsRoot),
@@ -75,14 +125,16 @@ OrchestrationEngine CreateEngine(DateTimeOffset started) => new(
     checkpointStore: null,
     new FileStopSignal(runsRoot));
 
-static WorkflowDefinition SimulatedWorkflow(TimeSpan delay, IReadOnlySet<string> failing, IReadOnlySet<string> flaky)
+async Task<WorkflowDefinition> SimulatedWorkflowAsync(TimeSpan delay, IReadOnlySet<string> failing, IReadOnlySet<string> flaky, IReadOnlySet<string> extras)
 {
-    var primary = new SimulatedExecutor(delay, failing, flaky);
-    var fallback = new SimulatedExecutor(delay, failing);
+    var policyGate = new PolicyGate(new PolicyEngine(await PolicyFile.LoadAsync(policyPath, CancellationToken.None)));
+    var primary = new SimulatedExecutor(delay, failing, flaky, extras);
+    var fallback = new SimulatedExecutor(delay, failing, implementExtras: extras);
     return new WorkflowDefinition(StandardSdlcGraph.Create(), _ => primary)
     {
         RetryPolicyFor = _ => new RetryPolicy(MaxAttempts: 2, InitialBackoff: TimeSpan.FromMilliseconds(250)),
         FallbacksFor = _ => [fallback],
+        ExitGatesFor = n => n.Kind is NodeKind.Implement or NodeKind.Tests or NodeKind.Docs ? [policyGate] : [],
     };
 }
 
@@ -94,6 +146,12 @@ int Summarize(string runId, RunState state, DateTimeOffset started)
     if (state.Status == RunStatus.Stopped)
     {
         Console.WriteLine($"Resume with: dotnet run --project src/Orchestrator.Cli -- resume {runId}");
+    }
+
+    foreach (var (node, _) in state.Nodes.Where(n => n.Value.Status == NodeStatus.AwaitingApproval))
+    {
+        Console.WriteLine($"Approve: dotnet run --project src/Orchestrator.Cli -- approve {runId} {node} --note \"...\"");
+        Console.WriteLine($"Reject:  dotnet run --project src/Orchestrator.Cli -- reject {runId} {node} --reason \"...\"");
     }
 
     return state.Status == RunStatus.Succeeded ? 0 : 2;
@@ -140,6 +198,10 @@ static void PrintEvent(RunEvent e, DateTimeOffset started)
         RunEventType.SafeStopped => "■",
         RunEventType.RunResumed => "▷",
         RunEventType.RolledBack => "⟲",
+        RunEventType.ApprovalRequested or RunEventType.RunPaused => "⏸",
+        RunEventType.ApprovalGranted => "✓",
+        RunEventType.ApprovalRejected => "✗",
+        RunEventType.PolicyViolation => "⚑",
         _ => "•",
     };
     var node = e.NodeId is null ? string.Empty : $"{e.NodeId,-18}";
