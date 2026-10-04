@@ -1,0 +1,8 @@
+{
+  "nodeId": "requirements",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"problem\": \"Marketing needs a printable QR code for each short link.\", \"acceptanceCriteria\": [\"GET /api/links/{code}/qr returns 200 with Content-Type image/png for an existing link\", \"The QR code encodes the public short URL (Shortener:BaseUrl + code), not the long URL\", \"Unknown code returns 404 ProblemDetails\", \"Different links produce different images\"], \"assumptions\": [\"Default size (~290px) is adequate for posters\", \"PNG is the only format needed\"], \"openQuestions\": [], \"outOfScope\": [\"SVG output\", \"Custom colors or logos\", \"Caching headers\"]}"
+}

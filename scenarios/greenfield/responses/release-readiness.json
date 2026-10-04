@@ -1,0 +1,8 @@
+{
+  "nodeId": "release-readiness",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"ready\": true, \"summary\": \"QR endpoint implemented with a reviewed MIT dependency, covered by three integration tests; build, full suite and secret scan passed.\", \"checklist\": [{\"item\": \"200 image/png for existing link\", \"status\": \"pass\"}, {\"item\": \"Encodes BaseUrl + code (not Host header)\", \"status\": \"pass\"}, {\"item\": \"404 ProblemDetails for unknown code\", \"status\": \"pass\"}, {\"item\": \"New dependency license reviewed and approved\", \"status\": \"pass\"}, {\"item\": \"Build, tests and secret scan green\", \"status\": \"pass\"}], \"risks\": [\"Third-party dependency updates must be tracked (Dependabot recommended)\"]}"
+}
