@@ -1,0 +1,8 @@
+{
+  "nodeId": "docs",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"summary\": \"Document the API including the QR endpoint.\", \"files\": [{\"path\": \"README.md\", \"content\": \"# URL Shortener\\n\\n## API\\n\\n| Method | Path | Description |\\n|---|---|---|\\n| POST | `/api/links` | Create a short link (`{ \\\"url\\\": \\\"...\\\", \\\"alias\\\": \\\"optional\\\" }`) |\\n| GET | `/{code}` | Redirect to the long URL (302) |\\n| GET | `/api/links/{code}/stats` | Link statistics |\\n| GET | `/api/links/{code}/qr` | QR code for the short link (`image/png`) |\\n| GET | `/health` | Health check |\\n\\nQR codes encode the public short URL (`Shortener:BaseUrl` + code), so a printed code keeps working\\neven if the link's target changes.\\n\"}]}"
+}

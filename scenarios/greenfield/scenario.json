@@ -1,0 +1,4 @@
+{
+  "name": "greenfield",
+  "changeRequest": "Add an endpoint that returns a QR code image (PNG) for a short link, so marketing can print links on posters."
+}
