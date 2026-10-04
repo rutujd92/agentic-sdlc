@@ -30,6 +30,12 @@ public sealed record NodeState(NodeStatus Status, int Attempts = 0, string? Outp
     public string? ApprovalPhase { get; init; }
 
     public bool ApprovalGranted { get; init; }
+
+    /// <summary>Output awaiting human review; becomes <see cref="NodeState.OutputHash"/> when completed.</summary>
+    public string? PendingOutputHash { get; init; }
+
+    /// <summary>Human guidance from a revision, passed to the next attempt as feedback.</summary>
+    public string? Guidance { get; init; }
 }
 
 /// <summary>
@@ -88,7 +94,13 @@ public sealed class RunState
                 Update(runEvent, n => n with { Status = NodeStatus.Running, Attempts = n.Attempts + 1, Error = null });
                 break;
             case RunEventType.NodeSucceeded:
-                Update(runEvent, n => n with { Status = NodeStatus.Succeeded, OutputHash = runEvent.Data.GetValueOrDefault("outputHash") });
+                Update(runEvent, n => n with
+                {
+                    Status = NodeStatus.Succeeded,
+                    OutputHash = runEvent.Data.GetValueOrDefault("outputHash"),
+                    PendingOutputHash = null,
+                    Guidance = null,
+                });
                 break;
             case RunEventType.NodeFailed:
                 Update(runEvent, n => n with { Status = NodeStatus.Failed, Error = runEvent.Message });
@@ -102,7 +114,7 @@ public sealed class RunState
                     Status = NodeStatus.AwaitingApproval,
                     ApprovalPhase = runEvent.Data["phase"],
                     ApprovalGranted = false,
-                    OutputHash = runEvent.Data.GetValueOrDefault("outputHash") ?? n.OutputHash,
+                    PendingOutputHash = runEvent.Data.GetValueOrDefault("outputHash"),
                 });
                 break;
             case RunEventType.ApprovalGranted:
@@ -115,6 +127,24 @@ public sealed class RunState
                 break;
             case RunEventType.ApprovalRejected:
                 Update(runEvent, n => n with { Status = NodeStatus.Failed, Error = $"Rejected by {runEvent.Actor}: {runEvent.Message}" });
+                break;
+            case RunEventType.NodeInvalidated:
+                Update(runEvent, n => n with
+                {
+                    Status = NodeStatus.Invalidated,
+                    Guidance = runEvent.Data.GetValueOrDefault("guidance"),
+                    ApprovalPhase = null,
+                    ApprovalGranted = false,
+                    PendingOutputHash = null,
+                    Error = null,
+                });
+                break;
+            case RunEventType.Replanned:
+                foreach (var id in runEvent.Data["addedNodes"].Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    _nodes.TryAdd(id, new NodeState(NodeStatus.Pending));
+                }
+
                 break;
             case RunEventType.RunPaused:
                 Status = RunStatus.Paused;

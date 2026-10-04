@@ -39,6 +39,25 @@ public sealed class WorkflowGraph
         return new WorkflowGraph(list, BuildLayers(list));
     }
 
+    /// <summary>Returns a new validated graph with the change applied; throws <see cref="InvalidWorkflowGraphException"/> if invalid.</summary>
+    public WorkflowGraph Apply(GraphChange change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        var unknown = change.AddedDependencies.Where(e => !Contains(e.Node)).Select(e => $"Edge targets unknown node '{e.Node}'.").ToArray();
+        if (unknown.Length > 0)
+        {
+            throw new InvalidWorkflowGraphException(unknown);
+        }
+
+        var rewired = Nodes.Select(n =>
+        {
+            var extra = change.AddedDependencies.Where(e => e.Node == n.Id).Select(e => e.DependsOn).Except(n.DependsOn, StringComparer.Ordinal).ToArray();
+            return extra.Length == 0 ? n : n with { DependsOn = [.. n.DependsOn, .. extra] };
+        });
+
+        return Create(rewired.Concat(change.AddedNodes));
+    }
+
     public WorkflowNode Get(string id) =>
         _byId.TryGetValue(id, out var node) ? node : throw new KeyNotFoundException($"Unknown node '{id}'.");
 

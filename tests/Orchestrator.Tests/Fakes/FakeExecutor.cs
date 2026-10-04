@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Orchestrator.Core.Execution;
+using Orchestrator.Core.Graph;
 
 namespace Orchestrator.Tests.Fakes;
 
@@ -28,6 +29,12 @@ public sealed class FakeExecutor : INodeExecutor
     public Dictionary<string, string> Outputs { get; init; } = new(StringComparer.Ordinal);
 
     public Action<NodeExecutionContext>? OnExecuted { get; init; }
+
+    /// <summary>When true, a non-null Feedback is appended to the output, so guidance changes the output hash.</summary>
+    public bool EchoFeedback { get; init; }
+
+    /// <summary>Node id -> graph change proposed in the node's result (planner behaviour).</summary>
+    public Dictionary<string, GraphChange> Plans { get; init; } = new(StringComparer.Ordinal);
 
     public ConcurrentQueue<(string NodeId, int Attempt, string? Feedback)> Calls { get; } = new();
 
@@ -62,7 +69,13 @@ public sealed class FakeExecutor : INodeExecutor
                 return NodeResult.Failure($"{id} could not complete", Actor);
             }
 
-            return NodeResult.Success(Artifact.Create(id, Outputs.GetValueOrDefault(id, $"output of {id}")), Actor, $"{id} done");
+            var content = Outputs.GetValueOrDefault(id, $"output of {id}");
+            if (EchoFeedback && context.Feedback is not null)
+            {
+                content += $" | guided by: {context.Feedback}";
+            }
+
+            return NodeResult.Success(Artifact.Create(id, content), Actor, $"{id} done") with { Plan = Plans.GetValueOrDefault(id) };
         }
         finally
         {

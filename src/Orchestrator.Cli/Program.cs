@@ -3,6 +3,7 @@ using Orchestrator.Core.Events;
 using Orchestrator.Core.Execution;
 using Orchestrator.Core.Governance;
 using Orchestrator.Core.Graph;
+using Orchestrator.Core.Planning;
 using Orchestrator.Core.State;
 using Orchestrator.Infrastructure.Agents;
 using Orchestrator.Infrastructure.Storage;
@@ -20,6 +21,8 @@ switch (args.FirstOrDefault())
         return await RunAsync(args[1], OptionValues(args, "--fail"), OptionValues(args, "--flaky"), OptionValues(args, "--with"), DelayOption(args));
     case "approve" when args.Length >= 3:
         return await DecideAsync(args[1], args[2], approve: true, OptionValues(args, "--note").FirstOrDefault());
+    case "revise" when args.Length >= 3:
+        return await ReviseAsync(args[1], args[2], OptionValues(args, "--guidance").FirstOrDefault());
     case "reject" when args.Length >= 3:
         return await DecideAsync(args[1], args[2], approve: false, OptionValues(args, "--reason").FirstOrDefault());
     case "resume" when args.Length >= 2:
@@ -40,9 +43,11 @@ switch (args.FirstOrDefault())
         Console.WriteLine("      --fail <node>                  Node always fails (retries, fallback, then skip downstream)");
         Console.WriteLine("      --flaky <node>                 Node fails on its first attempt only (shows retry)");
         Console.WriteLine("      --delay <ms>                   Simulated work per node (default 400)");
-        Console.WriteLine("      --with migration|package|secret  Add a policy-relevant change to the implement diff");
+        Console.WriteLine("      --with migration               Design re-plans: adds a migration node (needs approval)");
+        Console.WriteLine("      --with package|secret          Add a new dependency / leaked secret to the implement diff");
         Console.WriteLine("  approve <runId> <node> [--note t]  Approve a paused node (as git user.email) and resume");
         Console.WriteLine("  reject <runId> <node> --reason t   Reject a paused node and resume (fails it, rolls back)");
+        Console.WriteLine("  revise <runId> <node> --guidance t Re-plan: re-run a node with guidance; changed outputs cascade");
         Console.WriteLine("  stop <runId>                       Safe-stop a running run at the next node boundary");
         Console.WriteLine("  resume <runId> [--delay <ms>]      Continue a stopped run from its event log");
         Console.WriteLine("  status <runId>                     Rebuild and show a run's state from its event log");
@@ -105,6 +110,29 @@ async Task<int> DecideAsync(string runId, string nodeId, bool approve, string? t
     }
 
     Console.WriteLine($"{(approve ? "Approved" : "Rejected")} '{nodeId}' as {approver}.");
+    return await ResumeAsync(runId, TimeSpan.FromMilliseconds(400));
+}
+
+async Task<int> ReviseAsync(string runId, string nodeId, string? guidance)
+{
+    if (string.IsNullOrWhiteSpace(guidance))
+    {
+        Console.Error.WriteLine("A revision needs --guidance \"...\".");
+        return 1;
+    }
+
+    var actor = await GitUserEmailAsync();
+    try
+    {
+        await new ReplanService(new JsonlEventStore(runsRoot), TimeProvider.System).ReviseAsync(runId, nodeId, actor, guidance, CancellationToken.None);
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    Console.WriteLine($"Revised '{nodeId}' as {actor}; re-planning.");
     return await ResumeAsync(runId, TimeSpan.FromMilliseconds(400));
 }
 
@@ -202,6 +230,8 @@ static void PrintEvent(RunEvent e, DateTimeOffset started)
         RunEventType.ApprovalGranted => "✓",
         RunEventType.ApprovalRejected => "✗",
         RunEventType.PolicyViolation => "⚑",
+        RunEventType.Replanned => "⑂",
+        RunEventType.NodeInvalidated => "↺",
         _ => "•",
     };
     var node = e.NodeId is null ? string.Empty : $"{e.NodeId,-18}";

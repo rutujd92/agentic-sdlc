@@ -38,6 +38,12 @@ public sealed class SimulatedExecutor(
             return NodeResult.Success(Artifact.Create(context.Node.Id, ImplementDiff()), Actor, "Simulated implementation diff.");
         }
 
+        if (context.Node.Kind == NodeKind.Migration)
+        {
+            var migration = File("src/UrlShortener.Infrastructure/Persistence/Migrations/20261004000000_AddClicks.cs", "migrationBuilder.CreateTable(name: \"clicks\");");
+            return NodeResult.Success(Artifact.Create(context.Node.Id, migration), Actor, "Simulated migration.");
+        }
+
         var content = new StringBuilder()
             .AppendLine(CultureInfo.InvariantCulture, $"# {context.Node.Id}")
             .AppendLine()
@@ -49,7 +55,21 @@ public sealed class SimulatedExecutor(
             content.AppendLine(CultureInfo.InvariantCulture, $"- {input.NodeId} ({input.Hash[..12]})");
         }
 
-        return NodeResult.Success(Artifact.Create(context.Node.Id, content.ToString()), Actor, $"Simulated {context.Node.Kind} completed.");
+        if (context.Node.Kind == NodeKind.Requirements && context.Feedback is not null)
+        {
+            content.AppendLine().AppendLine(CultureInfo.InvariantCulture, $"Clarification applied: {context.Feedback}");
+        }
+
+        var result = NodeResult.Success(Artifact.Create(context.Node.Id, content.ToString()), Actor, $"Simulated {context.Node.Kind} completed.");
+        return context.Node.Kind == NodeKind.Design && implementExtras?.Contains("migration") == true
+            ? result with
+            {
+                Plan = new GraphChange(
+                    [new WorkflowNode("migration", NodeKind.Migration) { DependsOn = [context.Node.Id], Risk = RiskLevel.High, Description = "Add clicks table." }],
+                    [new DependencyEdge("implement", "migration")],
+                    "Design requires a schema change: the clicks table must exist before the implementation uses it."),
+            }
+            : result;
     }
 
     /// <summary>A small unified diff; extras (migration, package, secret) exercise the policy engine.</summary>
@@ -57,11 +77,6 @@ public sealed class SimulatedExecutor(
     {
         var diff = new StringBuilder()
             .Append(File("src/UrlShortener.Api/Links/LinkEndpoints.cs", "// simulated change"));
-        if (implementExtras?.Contains("migration") == true)
-        {
-            diff.Append(File("src/UrlShortener.Infrastructure/Persistence/Migrations/20261004000000_AddClicks.cs", "migrationBuilder.CreateTable(name: \"clicks\");"));
-        }
-
         if (implementExtras?.Contains("package") == true)
         {
             diff.Append(File("src/UrlShortener.Api/UrlShortener.Api.csproj", "<PackageReference Include=\"QRCoder\" Version=\"1.6.0\" />"));

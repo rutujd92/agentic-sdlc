@@ -22,6 +22,9 @@ public sealed record NodeExecutionContext(
 
 public sealed record NodeResult(bool Succeeded, Artifact? Output, string? Error, string Actor, string? Rationale)
 {
+    /// <summary>Optional re-plan proposed by this node (e.g. design discovers a migration is needed).</summary>
+    public GraphChange? Plan { get; init; }
+
     public static NodeResult Success(Artifact output, string actor, string? rationale = null) => new(true, output, null, actor, rationale);
 
     public static NodeResult Failure(string error, string actor) => new(false, null, error, actor, null);
