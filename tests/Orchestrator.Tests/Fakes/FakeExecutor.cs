@@ -19,6 +19,15 @@ public sealed class FakeExecutor : INodeExecutor
 
     public HashSet<string> ThrowingNodes { get; init; } = [];
 
+    /// <summary>Node id -> number of initial attempts that fail before it succeeds.</summary>
+    public Dictionary<string, int> FailFirst { get; init; } = new(StringComparer.Ordinal);
+
+    public string Actor { get; init; } = "agent:fake";
+
+    public Action<NodeExecutionContext>? OnExecuted { get; init; }
+
+    public ConcurrentQueue<(string NodeId, int Attempt, string? Feedback)> Calls { get; } = new();
+
     public ConcurrentQueue<string> Started { get; } = new();
 
     public ConcurrentDictionary<string, (TimeSpan Start, TimeSpan End)> Timings { get; } = new();
@@ -32,6 +41,7 @@ public sealed class FakeExecutor : INodeExecutor
         var id = context.Node.Id;
         Started.Enqueue(id);
         Contexts[id] = context;
+        Calls.Enqueue((id, context.Attempt, context.Feedback));
         var start = _clock.Elapsed;
         var now = Interlocked.Increment(ref _running);
         InterlockedMax(ref _peak, now);
@@ -43,14 +53,19 @@ public sealed class FakeExecutor : INodeExecutor
                 throw new InvalidOperationException($"boom in {id}");
             }
 
-            return FailingNodes.Contains(id)
-                ? NodeResult.Failure($"{id} could not complete", "agent:fake")
-                : NodeResult.Success(Artifact.Create(id, $"output of {id}"), "agent:fake", $"{id} done");
+            var failFirst = FailFirst.GetValueOrDefault(id);
+            if (FailingNodes.Contains(id) || Calls.Count(c => c.NodeId == id) <= failFirst)
+            {
+                return NodeResult.Failure($"{id} could not complete", Actor);
+            }
+
+            return NodeResult.Success(Artifact.Create(id, $"output of {id}"), Actor, $"{id} done");
         }
         finally
         {
             Interlocked.Decrement(ref _running);
             Timings[id] = (start, _clock.Elapsed);
+            OnExecuted?.Invoke(context);
         }
     }
 

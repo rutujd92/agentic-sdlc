@@ -8,4 +8,9 @@ public sealed record WorkflowDefinition(WorkflowGraph Graph, Func<WorkflowNode, 
     public Func<WorkflowNode, IReadOnlyList<IGate>> EntryGatesFor { get; init; } = _ => [];
 
     public Func<WorkflowNode, IReadOnlyList<IGate>> ExitGatesFor { get; init; } = _ => [];
+
+    public Func<WorkflowNode, RetryPolicy> RetryPolicyFor { get; init; } = _ => RetryPolicy.None;
+
+    /// <summary>Executors tried in order (one attempt each) after the primary exhausts its retries.</summary>
+    public Func<WorkflowNode, IReadOnlyList<INodeExecutor>> FallbacksFor { get; init; } = _ => [];
 }
