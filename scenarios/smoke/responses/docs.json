@@ -1,0 +1,8 @@
+{
+  "nodeId": "docs",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"summary\": \"Add API table to README.\", \"files\": [{\"path\": \"README.md\", \"content\": \"# URL Shortener\\n\\n## API\\n\\n| Method | Path | Description |\\n|---|---|---|\\n| POST | `/api/links` | Create a short link |\\n| GET | `/{code}` | Redirect to the long URL |\\n| GET | `/api/links/{code}/stats` | Link statistics |\\n| GET | `/api/version` | Deployed build version |\\n| GET | `/health` | Health check |\\n\"}]}"
+}

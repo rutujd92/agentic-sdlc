@@ -22,7 +22,7 @@ The Angular Dashboard is replaced by a generated HTML run report (DAG, audit log
 | Data (shortener) | PostgreSQL 16, EF Core (Npgsql provider) |
 | Orchestrator state | Append-only JSONL event log per run (`runs/<runId>/events.jsonl`) |
 | Tests | xUnit, `Microsoft.AspNetCore.Mvc.Testing`, EF Core SQLite in-memory; optional Testcontainers.PostgreSql smoke test |
-| AI agents | `IChatProvider` abstraction: `ClaudeChatProvider` (Anthropic Messages API over `HttpClient`) and `ReplayChatProvider` (recorded responses, default, no API key needed). No Semantic Kernel (ADR 0002). |
+| AI agents | `IChatProvider` in Core. `ClaudeChatProvider` uses the official `Anthropic` NuGet SDK (`claude-opus-5-5`, structured JSON outputs, cached repo context, server-side refusal fallback); `ReplayChatProvider` (default) serves recorded responses from `scenarios/<name>/responses/`, so demos need no API key. Deterministic steps (validate, migrations, merge) use tools, not models. |
 | Containers | Docker, Docker Compose |
 | Security checks | Gitleaks (if installed, else a built-in regex secret scan), .NET analyzers |
 
@@ -102,7 +102,8 @@ Directory.Build.props
 
 ## Orchestrator Rules
 
-- Agents only modify files inside a per-run **git worktree** on branch `orch/<runId>`. They never touch `main`.
+- Agents only modify files inside a per-run **git worktree** (`runs/<runId>/worktree`, branch `orch/<runId>`). They never touch `main`, and code agents may only write within their lane (implement: `src/UrlShortener.*`, tests: `tests/UrlShortener.Tests/`, docs: `README.md`, `CHANGELOG.md`, `docs/`).
+- Clean up old run worktrees with `git worktree prune` after deleting `runs/`.
 - High-impact actions always require human approval: requirement sign-off when ambiguity is found, database migrations, new packages, changes outside the allowed paths, and the final merge.
 - Every state change is an event in the run's append-only log. The log is the audit trail, the resume point and the metrics source.
 

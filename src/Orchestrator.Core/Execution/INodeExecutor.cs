@@ -25,6 +25,9 @@ public sealed record NodeResult(bool Succeeded, Artifact? Output, string? Error,
     /// <summary>Optional re-plan proposed by this node (e.g. design discovers a migration is needed).</summary>
     public GraphChange? Plan { get; init; }
 
+    /// <summary>Execution telemetry (model, token usage, durations) recorded on the NodeSucceeded event.</summary>
+    public IReadOnlyDictionary<string, string> Telemetry { get; init; } = new Dictionary<string, string>();
+
     public static NodeResult Success(Artifact output, string actor, string? rationale = null) => new(true, output, null, actor, rationale);
 
     public static NodeResult Failure(string error, string actor) => new(false, null, error, actor, null);
