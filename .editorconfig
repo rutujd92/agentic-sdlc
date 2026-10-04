@@ -21,3 +21,5 @@ generated_code = true
 # Test names use Given_When_Then style underscores.
 [tests/**.cs]
 dotnet_diagnostic.CA1707.severity = none
+# xUnit IAsyncLifetime owns disposal of fixtures in tests.
+dotnet_diagnostic.CA1001.severity = none
