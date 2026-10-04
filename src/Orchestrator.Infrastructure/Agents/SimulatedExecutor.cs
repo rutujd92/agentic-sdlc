@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Orchestrator.Core.Execution;
+using Orchestrator.Core.Graph;
 
 namespace Orchestrator.Infrastructure.Agents;
 
@@ -9,7 +10,11 @@ namespace Orchestrator.Infrastructure.Agents;
 /// placeholder artifact listing its inputs. Nodes in <paramref name="failingNodes"/> always fail;
 /// nodes in <paramref name="flakyNodes"/> fail on their first attempt only (to demonstrate retries).
 /// </summary>
-public sealed class SimulatedExecutor(TimeSpan delay, IReadOnlySet<string>? failingNodes = null, IReadOnlySet<string>? flakyNodes = null) : INodeExecutor
+public sealed class SimulatedExecutor(
+    TimeSpan delay,
+    IReadOnlySet<string>? failingNodes = null,
+    IReadOnlySet<string>? flakyNodes = null,
+    IReadOnlySet<string>? implementExtras = null) : INodeExecutor
 {
     public const string Actor = "agent:simulated";
 
@@ -28,6 +33,11 @@ public sealed class SimulatedExecutor(TimeSpan delay, IReadOnlySet<string>? fail
             return NodeResult.Failure($"Simulated transient error in '{context.Node.Id}' (attempt 1).", Actor);
         }
 
+        if (context.Node.Kind == NodeKind.Implement)
+        {
+            return NodeResult.Success(Artifact.Create(context.Node.Id, ImplementDiff()), Actor, "Simulated implementation diff.");
+        }
+
         var content = new StringBuilder()
             .AppendLine(CultureInfo.InvariantCulture, $"# {context.Node.Id}")
             .AppendLine()
@@ -41,4 +51,30 @@ public sealed class SimulatedExecutor(TimeSpan delay, IReadOnlySet<string>? fail
 
         return NodeResult.Success(Artifact.Create(context.Node.Id, content.ToString()), Actor, $"Simulated {context.Node.Kind} completed.");
     }
+
+    /// <summary>A small unified diff; extras (migration, package, secret) exercise the policy engine.</summary>
+    private string ImplementDiff()
+    {
+        var diff = new StringBuilder()
+            .Append(File("src/UrlShortener.Api/Links/LinkEndpoints.cs", "// simulated change"));
+        if (implementExtras?.Contains("migration") == true)
+        {
+            diff.Append(File("src/UrlShortener.Infrastructure/Persistence/Migrations/20261004000000_AddClicks.cs", "migrationBuilder.CreateTable(name: \"clicks\");"));
+        }
+
+        if (implementExtras?.Contains("package") == true)
+        {
+            diff.Append(File("src/UrlShortener.Api/UrlShortener.Api.csproj", "<PackageReference Include=\"QRCoder\" Version=\"1.6.0\" />"));
+        }
+
+        if (implementExtras?.Contains("secret") == true)
+        {
+            diff.Append(File("src/UrlShortener.Api/appsettings.json", "\"Shortener\": \"Host=prod;Password=SuperSecret123\""));
+        }
+
+        return diff.ToString();
+    }
+
+    private static string File(string path, string added) =>
+        $"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -1 +1,2 @@\n context\n+{added}\n";
 }

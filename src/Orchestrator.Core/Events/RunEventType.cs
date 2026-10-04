@@ -22,6 +22,7 @@ public enum RunEventType
     NodeInvalidated,
     SafeStopped,
     RunResumed,
+    RunPaused,
     RunCompleted,
     RunFailed,
 }

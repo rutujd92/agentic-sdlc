@@ -24,6 +24,9 @@ public sealed class FakeExecutor : INodeExecutor
 
     public string Actor { get; init; } = "agent:fake";
 
+    /// <summary>Node id -> artifact content to return instead of the default "output of {id}".</summary>
+    public Dictionary<string, string> Outputs { get; init; } = new(StringComparer.Ordinal);
+
     public Action<NodeExecutionContext>? OnExecuted { get; init; }
 
     public ConcurrentQueue<(string NodeId, int Attempt, string? Feedback)> Calls { get; } = new();
@@ -59,7 +62,7 @@ public sealed class FakeExecutor : INodeExecutor
                 return NodeResult.Failure($"{id} could not complete", Actor);
             }
 
-            return NodeResult.Success(Artifact.Create(id, $"output of {id}"), Actor, $"{id} done");
+            return NodeResult.Success(Artifact.Create(id, Outputs.GetValueOrDefault(id, $"output of {id}")), Actor, $"{id} done");
         }
         finally
         {

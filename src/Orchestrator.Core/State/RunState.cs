@@ -24,7 +24,13 @@ public enum NodeStatus
     Invalidated,
 }
 
-public sealed record NodeState(NodeStatus Status, int Attempts = 0, string? OutputHash = null, string? Error = null);
+public sealed record NodeState(NodeStatus Status, int Attempts = 0, string? OutputHash = null, string? Error = null)
+{
+    /// <summary><c>pre</c> (approve before executing) or <c>output</c> (review a produced output); null when none requested.</summary>
+    public string? ApprovalPhase { get; init; }
+
+    public bool ApprovalGranted { get; init; }
+}
 
 /// <summary>
 /// Projection of a run's event log. The engine applies each event as it is written, and
@@ -89,6 +95,29 @@ public sealed class RunState
                 break;
             case RunEventType.NodeSkipped:
                 Update(runEvent, n => n with { Status = NodeStatus.Skipped, Error = runEvent.Message });
+                break;
+            case RunEventType.ApprovalRequested:
+                Update(runEvent, n => n with
+                {
+                    Status = NodeStatus.AwaitingApproval,
+                    ApprovalPhase = runEvent.Data["phase"],
+                    ApprovalGranted = false,
+                    OutputHash = runEvent.Data.GetValueOrDefault("outputHash") ?? n.OutputHash,
+                });
+                break;
+            case RunEventType.ApprovalGranted:
+                // Pre-approval: the node becomes runnable. Output approval: the reviewed output completes it on resume.
+                Update(runEvent, n => n with
+                {
+                    Status = n.ApprovalPhase == "pre" ? NodeStatus.Pending : NodeStatus.AwaitingApproval,
+                    ApprovalGranted = true,
+                });
+                break;
+            case RunEventType.ApprovalRejected:
+                Update(runEvent, n => n with { Status = NodeStatus.Failed, Error = $"Rejected by {runEvent.Actor}: {runEvent.Message}" });
+                break;
+            case RunEventType.RunPaused:
+                Status = RunStatus.Paused;
                 break;
             case RunEventType.CheckpointCreated:
                 LastCheckpointId = runEvent.Data["checkpointId"];

@@ -88,9 +88,19 @@ public sealed class OrchestrationEngine(
                     break;
                 }
 
+                var status = run.State.Nodes[node.Id];
+                if (running.ContainsValue(node.Id))
+                {
+                    continue;
+                }
+
+                if (status is { Status: NodeStatus.AwaitingApproval, ApprovalPhase: "output", ApprovalGranted: true })
+                {
+                    running[CompleteApprovedOutputAsync(run, workflow, node, outputs, cancellationToken)] = node.Id;
+                }
+
                 // Ready/Running without an in-flight task means the node was interrupted (resume); run it again.
-                if (run.State.Nodes[node.Id].Status is NodeStatus.Pending or NodeStatus.Ready or NodeStatus.Running
-                    && !running.ContainsValue(node.Id)
+                else if (status.Status is NodeStatus.Pending or NodeStatus.Ready or NodeStatus.Running
                     && node.DependsOn.All(d => run.State.Nodes[d].Status == NodeStatus.Succeeded))
                 {
                     await run.EmitAsync(RunEventType.NodeReady, node.Id, SystemActor, null, cancellationToken);
@@ -111,6 +121,13 @@ public sealed class OrchestrationEngine(
         if (stopReason is not null)
         {
             await run.EmitAsync(RunEventType.SafeStopped, null, SystemActor, stopReason, cancellationToken);
+            return run.State;
+        }
+
+        var awaiting = run.State.Nodes.Where(n => n.Value.Status == NodeStatus.AwaitingApproval).Select(n => n.Key).ToArray();
+        if (awaiting.Length > 0)
+        {
+            await run.EmitAsync(RunEventType.RunPaused, null, SystemActor, $"Awaiting human approval: {string.Join(", ", awaiting)}.", cancellationToken);
             return run.State;
         }
 
@@ -160,10 +177,17 @@ public sealed class OrchestrationEngine(
     {
         var inputs = workflow.Graph.TransitiveDependencies(node.Id).ToDictionary(n => n.Id, n => outputs[n.Id], StringComparer.Ordinal);
 
-        var entryFailure = await EvaluateGatesAsync(run, node, workflow.EntryGatesFor(node), "entry", new GateContext(run.RunId, node, inputs, null), cancellationToken);
+        var (entryFailure, _) = await EvaluateGatesAsync(run, node, workflow.EntryGatesFor(node), "entry", new GateContext(run.RunId, node, inputs, null), cancellationToken);
         if (entryFailure is not null)
         {
             await run.EmitAsync(RunEventType.NodeFailed, node.Id, SystemActor, entryFailure, cancellationToken);
+            return;
+        }
+
+        if (node.RequiresApproval && !run.State.Nodes[node.Id].ApprovalGranted)
+        {
+            await run.EmitAsync(RunEventType.ApprovalRequested, node.Id, SystemActor,
+                $"'{node.Id}' is a {node.Risk}-risk action and needs human approval before it runs.", cancellationToken, ("phase", "pre"));
             return;
         }
 
@@ -186,7 +210,15 @@ public sealed class OrchestrationEngine(
                 await run.EmitAsync(RunEventType.NodeStarted, node.Id, SystemActor, null, cancellationToken,
                     ("attempt", total.ToString(CultureInfo.InvariantCulture)), ("executor", label));
 
-                var (output, actor, rationale, failure) = await AttemptAsync(run, workflow, node, executor, inputs, total, feedback, cancellationToken);
+                var (output, actor, rationale, failure, approvalReasons) = await AttemptAsync(run, workflow, node, executor, inputs, total, feedback, cancellationToken);
+                if (failure is null && approvalReasons.Count > 0)
+                {
+                    await artifactStore.SaveAsync(run.RunId, output!, cancellationToken);
+                    await run.EmitAsync(RunEventType.ApprovalRequested, node.Id, actor, string.Join(" ", approvalReasons), cancellationToken,
+                        ("phase", "output"), ("outputHash", output!.Hash));
+                    return;
+                }
+
                 if (failure is null)
                 {
                     await CompleteAsync(run, node, inputs, output!, actor, rationale, outputs, cancellationToken);
@@ -208,7 +240,7 @@ public sealed class OrchestrationEngine(
         await run.EmitAsync(RunEventType.NodeFailed, node.Id, SystemActor, feedback, cancellationToken);
     }
 
-    private static async Task<(Artifact? Output, string Actor, string? Rationale, string? Failure)> AttemptAsync(
+    private static async Task<(Artifact? Output, string Actor, string? Rationale, string? Failure, IReadOnlyList<string> ApprovalReasons)> AttemptAsync(
         RunExecution run, WorkflowDefinition workflow, WorkflowNode node, INodeExecutor executor,
         IReadOnlyDictionary<string, Artifact> inputs, int attempt, string? feedback, CancellationToken cancellationToken)
     {
@@ -220,16 +252,16 @@ public sealed class OrchestrationEngine(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return (null, SystemActor, null, $"Executor threw {ex.GetType().Name}: {ex.Message}");
+            return (null, SystemActor, null, $"Executor threw {ex.GetType().Name}: {ex.Message}", []);
         }
 
         if (!result.Succeeded || result.Output is null)
         {
-            return (null, result.Actor, null, result.Error ?? "Executor returned no output.");
+            return (null, result.Actor, null, result.Error ?? "Executor returned no output.", []);
         }
 
-        var gateFailure = await EvaluateGatesAsync(run, node, workflow.ExitGatesFor(node), "exit", new GateContext(run.RunId, node, inputs, result.Output), cancellationToken);
-        return (result.Output, result.Actor, result.Rationale, gateFailure);
+        var (gateFailure, approvalReasons) = await EvaluateGatesAsync(run, node, workflow.ExitGatesFor(node), "exit", new GateContext(run.RunId, node, inputs, result.Output), cancellationToken);
+        return (result.Output, result.Actor, result.Rationale, gateFailure, approvalReasons);
     }
 
     private async Task CompleteAsync(
@@ -248,22 +280,49 @@ public sealed class OrchestrationEngine(
         }
     }
 
-    /// <returns>Null when every gate passes, otherwise the failure reason.</returns>
-    private static async Task<string?> EvaluateGatesAsync(
+    /// <returns>Failure is null when every gate passes; approval reasons list gates that passed but require human review.</returns>
+    private static async Task<(string? Failure, IReadOnlyList<string> ApprovalReasons)> EvaluateGatesAsync(
         RunExecution run, WorkflowNode node, IReadOnlyList<IGate> gates, string phase, GateContext context, CancellationToken cancellationToken)
     {
+        var approvalReasons = new List<string>();
         foreach (var gate in gates)
         {
             var result = await gate.EvaluateAsync(context, cancellationToken);
+            foreach (var violation in result.Violations)
+            {
+                await run.EmitAsync(RunEventType.PolicyViolation, node.Id, SystemActor, violation, cancellationToken,
+                    ("gate", gate.Name), ("outcome", result.Passed ? "RequireApproval" : "Block"));
+            }
+
             await run.EmitAsync(result.Passed ? RunEventType.GatePassed : RunEventType.GateFailed, node.Id, SystemActor, result.Reason, cancellationToken,
                 ("gate", gate.Name), ("phase", phase));
             if (!result.Passed)
             {
-                return $"{phase} gate '{gate.Name}' failed: {result.Reason}";
+                return ($"{phase} gate '{gate.Name}' failed: {result.Reason}", approvalReasons);
+            }
+
+            if (result.RequiresApproval)
+            {
+                approvalReasons.Add(result.Reason);
             }
         }
 
-        return null;
+        return (null, approvalReasons);
+    }
+
+    /// <summary>Completes a node whose output a human approved; the reviewed artifact is used as-is (no re-execution).</summary>
+    private async Task CompleteApprovedOutputAsync(
+        RunExecution run, WorkflowDefinition workflow, WorkflowNode node, ConcurrentDictionary<string, Artifact> outputs, CancellationToken cancellationToken)
+    {
+        var output = await artifactStore.GetAsync(run.RunId, node.Id, cancellationToken)
+            ?? throw new InvalidOperationException($"Approved output for '{node.Id}' is missing.");
+        if (output.Hash != run.State.Nodes[node.Id].OutputHash)
+        {
+            throw new InvalidOperationException($"Approved output for '{node.Id}' changed after review (hash mismatch).");
+        }
+
+        var inputs = workflow.Graph.TransitiveDependencies(node.Id).ToDictionary(n => n.Id, n => outputs[n.Id], StringComparer.Ordinal);
+        await CompleteAsync(run, node, inputs, output, "human-approved", "Output approved by reviewer.", outputs, cancellationToken);
     }
 
     /// <summary>Per-run event writer. Serializes appends so sequence numbers and state stay consistent under parallel nodes.</summary>

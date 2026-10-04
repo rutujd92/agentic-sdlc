@@ -54,3 +54,24 @@ public sealed class FileStoresTests : IDisposable
         }
     }
 }
+
+public class RepositoryPolicyFileTests
+{
+    [Fact]
+    public async Task Repository_policies_json_loads_and_protects_ci_and_itself()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (!File.Exists(Path.Combine(directory!.FullName, "policies.json")))
+        {
+            directory = directory.Parent;
+        }
+
+        var rules = await PolicyFile.LoadAsync(Path.Combine(directory.FullName, "policies.json"), CancellationToken.None);
+        var engine = new Orchestrator.Core.Governance.PolicyEngine(rules);
+
+        Assert.NotEmpty(rules.SecretPatterns);
+        Assert.Equal(Orchestrator.Core.Governance.PolicyOutcome.Block, engine.Evaluate("diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\n+x\n").Outcome);
+        Assert.Equal(Orchestrator.Core.Governance.PolicyOutcome.Block, engine.Evaluate("diff --git a/policies.json b/policies.json\n+{}\n").Outcome);
+        Assert.Equal(Orchestrator.Core.Governance.PolicyOutcome.Allow, engine.Evaluate("diff --git a/src/UrlShortener.Api/Program.cs b/src/UrlShortener.Api/Program.cs\n+// ok\n").Outcome);
+    }
+}
