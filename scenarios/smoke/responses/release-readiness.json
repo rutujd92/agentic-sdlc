@@ -1,0 +1,8 @@
+{
+  "nodeId": "release-readiness",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"ready\": true, \"summary\": \"Endpoint implemented, covered by an integration test, documented; validation passed.\", \"checklist\": [{\"item\": \"GET /api/version returns 200 with version JSON\", \"status\": \"pass\"}, {\"item\": \"No authentication or rate limiting applied\", \"status\": \"pass\"}, {\"item\": \"Build and full test suite green\", \"status\": \"pass\"}], \"risks\": [\"Build metadata exposure (low)\"]}"
+}

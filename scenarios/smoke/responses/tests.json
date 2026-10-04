@@ -1,0 +1,8 @@
+{
+  "nodeId": "tests",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"summary\": \"Integration test for GET /api/version.\", \"files\": [{\"path\": \"tests/UrlShortener.Tests/Api/VersionEndpointTests.cs\", \"content\": \"using System.Net;\\nusing System.Net.Http.Json;\\n\\nnamespace UrlShortener.Tests.Api;\\n\\npublic sealed class VersionEndpointTests : IAsyncLifetime\\n{\\n    private readonly ShortenerApiFactory _factory = new();\\n\\n    public Task InitializeAsync() => _factory.InitializeDatabaseAsync();\\n\\n    public async Task DisposeAsync() => await _factory.DisposeAsync();\\n\\n    [Fact]\\n    public async Task Version_returns_200_with_a_non_empty_version()\\n    {\\n        using var client = _factory.CreateClient();\\n\\n        var response = await client.GetAsync(\\\"/api/version\\\");\\n\\n        Assert.Equal(HttpStatusCode.OK, response.StatusCode);\\n        var body = await response.Content.ReadFromJsonAsync<VersionDto>();\\n        Assert.False(string.IsNullOrWhiteSpace(body?.Version));\\n    }\\n\\n    private sealed record VersionDto(string Version);\\n}\\n\"}]}"
+}

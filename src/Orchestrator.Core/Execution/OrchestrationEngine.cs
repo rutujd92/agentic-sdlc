@@ -24,6 +24,7 @@ public sealed class OrchestrationEngine(
     IStopSignal? stopSignal = null)
 {
     private const string SystemActor = "system";
+    private static readonly IReadOnlyDictionary<string, string> NoTelemetry = new Dictionary<string, string>();
     private readonly EngineOptions _options = options ?? new EngineOptions();
     private readonly ICheckpointStore _checkpoints = checkpointStore ?? new NoCheckpoints();
     private readonly IStopSignal _stopSignal = stopSignal ?? new NeverStop();
@@ -216,7 +217,7 @@ public sealed class OrchestrationEngine(
                 await run.EmitAsync(RunEventType.NodeStarted, node.Id, SystemActor, null, cancellationToken,
                     ("attempt", total.ToString(CultureInfo.InvariantCulture)), ("executor", label));
 
-                var (output, actor, rationale, failure, approvalReasons, plan) = await AttemptAsync(run, workflow, node, executor, inputs, total, feedback, cancellationToken);
+                var (output, actor, rationale, failure, approvalReasons, plan, telemetry) = await AttemptAsync(run, workflow, node, executor, inputs, total, feedback, cancellationToken);
                 if (failure is null && approvalReasons.Count > 0)
                 {
                     await artifactStore.SaveAsync(run.RunId, output!, cancellationToken);
@@ -227,7 +228,7 @@ public sealed class OrchestrationEngine(
 
                 if (failure is null)
                 {
-                    await CompleteAsync(run, node, inputs, output!, actor, rationale, outputs, cancellationToken, plan);
+                    await CompleteAsync(run, node, inputs, output!, actor, rationale, outputs, cancellationToken, plan, telemetry);
                     return;
                 }
 
@@ -246,7 +247,7 @@ public sealed class OrchestrationEngine(
         await run.EmitAsync(RunEventType.NodeFailed, node.Id, SystemActor, feedback, cancellationToken);
     }
 
-    private static async Task<(Artifact? Output, string Actor, string? Rationale, string? Failure, IReadOnlyList<string> ApprovalReasons, GraphChange? Plan)> AttemptAsync(
+    private static async Task<(Artifact? Output, string Actor, string? Rationale, string? Failure, IReadOnlyList<string> ApprovalReasons, GraphChange? Plan, IReadOnlyDictionary<string, string> Telemetry)> AttemptAsync(
         RunExecution run, WorkflowDefinition workflow, WorkflowNode node, INodeExecutor executor,
         IReadOnlyDictionary<string, Artifact> inputs, int attempt, string? feedback, CancellationToken cancellationToken)
     {
@@ -258,22 +259,23 @@ public sealed class OrchestrationEngine(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return (null, SystemActor, null, $"Executor threw {ex.GetType().Name}: {ex.Message}", [], null);
+            return (null, SystemActor, null, $"Executor threw {ex.GetType().Name}: {ex.Message}", [], null, NoTelemetry);
         }
 
         if (!result.Succeeded || result.Output is null)
         {
-            return (null, result.Actor, null, result.Error ?? "Executor returned no output.", [], null);
+            return (null, result.Actor, null, result.Error ?? "Executor returned no output.", [], null, result.Telemetry);
         }
 
         var (gateFailure, approvalReasons) = await EvaluateGatesAsync(run, node, workflow.ExitGatesFor(node), "exit", new GateContext(run.RunId, node, inputs, result.Output), cancellationToken);
         var (plan, planFailure) = ValidatePlan(run, node, result.Plan);
-        return (result.Output, result.Actor, result.Rationale, gateFailure ?? planFailure, approvalReasons, plan);
+        return (result.Output, result.Actor, result.Rationale, gateFailure ?? planFailure, approvalReasons, plan, result.Telemetry);
     }
 
     private async Task CompleteAsync(
         RunExecution run, WorkflowNode node, IReadOnlyDictionary<string, Artifact> inputs, Artifact output, string actor, string? rationale,
-        ConcurrentDictionary<string, Artifact> outputs, CancellationToken cancellationToken, GraphChange? plan = null)
+        ConcurrentDictionary<string, Artifact> outputs, CancellationToken cancellationToken, GraphChange? plan = null,
+        IReadOnlyDictionary<string, string>? telemetry = null)
     {
         var previousHash = run.State.Nodes[node.Id].OutputHash;
         await artifactStore.SaveAsync(run.RunId, output, cancellationToken);
@@ -305,9 +307,13 @@ public sealed class OrchestrationEngine(
             }
         }
 
-        await run.EmitAsync(RunEventType.NodeSucceeded, node.Id, actor, rationale, cancellationToken,
+        (string, string)[] data =
+        [
             ("outputHash", output.Hash),
-            ("inputHashes", string.Join(';', inputs.Values.Select(a => $"{a.NodeId}={a.Hash}"))));
+            ("inputHashes", string.Join(';', inputs.Values.Select(a => $"{a.NodeId}={a.Hash}"))),
+            .. (telemetry ?? NoTelemetry).Select(t => (t.Key, t.Value)),
+        ];
+        await run.EmitAsync(RunEventType.NodeSucceeded, node.Id, actor, rationale, cancellationToken, data);
 
         if (await _checkpoints.CreateAsync(run.RunId, $"after {node.Id}", cancellationToken) is { } checkpoint)
         {

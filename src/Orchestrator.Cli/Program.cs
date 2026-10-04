@@ -1,4 +1,5 @@
 using System.Globalization;
+using Orchestrator.Cli;
 using Orchestrator.Core.Events;
 using Orchestrator.Core.Execution;
 using Orchestrator.Core.Governance;
@@ -17,6 +18,8 @@ switch (args.FirstOrDefault())
     case "graph":
         PrintGraph(StandardSdlcGraph.Create());
         return 0;
+    case "run" when OptionValues(args, "--scenario").Count == 1:
+        return await RunScenarioAsync(OptionValues(args, "--scenario").First(), args.Contains("--live"), args.Contains("--record"));
     case "run" when args.Length >= 2:
         return await RunAsync(args[1], OptionValues(args, "--fail"), OptionValues(args, "--flaky"), OptionValues(args, "--with"), DelayOption(args));
     case "approve" when args.Length >= 3:
@@ -39,6 +42,8 @@ switch (args.FirstOrDefault())
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  graph                              Show the standard SDLC graph and its parallel layers");
+        Console.WriteLine("  run --scenario <dir> [--live [--record]]  Run a scenario with real agents in a git worktree");
+        Console.WriteLine("                                     (default: replay recorded responses; --live calls Claude)");
         Console.WriteLine("  run \"<change request>\" [options]    Run the SDLC graph with simulated agents");
         Console.WriteLine("      --fail <node>                  Node always fails (retries, fallback, then skip downstream)");
         Console.WriteLine("      --flaky <node>                 Node fails on its first attempt only (shows retry)");
@@ -56,14 +61,35 @@ switch (args.FirstOrDefault())
 
 async Task<int> RunAsync(string changeRequest, IReadOnlySet<string> failing, IReadOnlySet<string> flaky, IReadOnlySet<string> extras, TimeSpan delay)
 {
+    var config = new RunConfig("simulated", DelayMs: (int)delay.TotalMilliseconds, Failing: [.. failing], Flaky: [.. flaky], Extras: [.. extras]);
+    return await StartAsync(config, changeRequest);
+}
+
+async Task<int> RunScenarioAsync(string scenarioDir, bool live, bool record)
+{
+    var scenario = await Scenario.LoadAsync(scenarioDir);
+    if (live && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")))
+    {
+        Console.Error.WriteLine("--live needs ANTHROPIC_API_KEY in the environment.");
+        return 1;
+    }
+
+    Console.WriteLine($"Scenario: {scenario.Name} ({(live ? record ? "live, recording" : "live" : "replay")})");
+    return await StartAsync(new RunConfig("scenario", Path.GetFullPath(scenarioDir), live, record), scenario.ChangeRequest);
+}
+
+async Task<int> StartAsync(RunConfig config, string changeRequest)
+{
     var runId = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..4]}";
+    await config.SaveAsync(runsRoot, runId);
     Console.WriteLine($"Run {runId}");
     Console.WriteLine($"Change request: {changeRequest}");
     Console.WriteLine($"(stop it from another terminal with: dotnet run --project src/Orchestrator.Cli -- stop {runId})");
     Console.WriteLine();
 
     var started = DateTimeOffset.UtcNow;
-    var state = await CreateEngine(started).RunAsync(runId, changeRequest, await SimulatedWorkflowAsync(delay, failing, flaky, extras), CancellationToken.None);
+    var (workflow, checkpoints) = await Workflows.BuildAsync(config, Directory.GetCurrentDirectory(), runsRoot, runId, policyPath);
+    var state = await CreateEngine(started, checkpoints).RunAsync(runId, changeRequest, workflow, CancellationToken.None);
     return Summarize(runId, state, started);
 }
 
@@ -78,7 +104,9 @@ async Task<int> ResumeAsync(string runId, TimeSpan delay)
     Console.WriteLine($"Resuming {runId}");
     Console.WriteLine();
     var started = DateTimeOffset.UtcNow;
-    var state = await CreateEngine(started).ResumeAsync(runId, await SimulatedWorkflowAsync(delay, Empty(), Empty(), Empty()), CancellationToken.None);
+    var config = await RunConfig.LoadAsync(runsRoot, runId);
+    var (workflow, checkpoints) = await Workflows.BuildAsync(config, Directory.GetCurrentDirectory(), runsRoot, runId, policyPath);
+    var state = await CreateEngine(started, checkpoints).ResumeAsync(runId, workflow, CancellationToken.None);
     return Summarize(runId, state, started);
 }
 
@@ -143,28 +171,15 @@ static async Task<string> GitUserEmailAsync()
     return result.Succeeded && email.Length > 0 ? email : Environment.UserName;
 }
 
-static HashSet<string> Empty() => new(StringComparer.Ordinal);
 
-OrchestrationEngine CreateEngine(DateTimeOffset started) => new(
+
+OrchestrationEngine CreateEngine(DateTimeOffset started, ICheckpointStore? checkpoints) => new(
     new JsonlEventStore(runsRoot),
     new FileArtifactStore(runsRoot),
     TimeProvider.System,
     new EngineOptions { OnEvent = e => PrintEvent(e, started) },
-    checkpointStore: null,
+    checkpoints,
     new FileStopSignal(runsRoot));
-
-async Task<WorkflowDefinition> SimulatedWorkflowAsync(TimeSpan delay, IReadOnlySet<string> failing, IReadOnlySet<string> flaky, IReadOnlySet<string> extras)
-{
-    var policyGate = new PolicyGate(new PolicyEngine(await PolicyFile.LoadAsync(policyPath, CancellationToken.None)));
-    var primary = new SimulatedExecutor(delay, failing, flaky, extras);
-    var fallback = new SimulatedExecutor(delay, failing, implementExtras: extras);
-    return new WorkflowDefinition(StandardSdlcGraph.Create(), _ => primary)
-    {
-        RetryPolicyFor = _ => new RetryPolicy(MaxAttempts: 2, InitialBackoff: TimeSpan.FromMilliseconds(250)),
-        FallbacksFor = _ => [fallback],
-        ExitGatesFor = n => n.Kind is NodeKind.Implement or NodeKind.Tests or NodeKind.Docs ? [policyGate] : [],
-    };
-}
 
 int Summarize(string runId, RunState state, DateTimeOffset started)
 {
@@ -236,6 +251,11 @@ static void PrintEvent(RunEvent e, DateTimeOffset started)
     };
     var node = e.NodeId is null ? string.Empty : $"{e.NodeId,-18}";
     var detail = e.Type == RunEventType.RunStarted ? string.Empty : e.Message ?? string.Empty;
+    if (e.Type == RunEventType.NodeSucceeded && e.Data.TryGetValue("model", out var model))
+    {
+        detail = $"{detail} [{model}, {e.Data["inputTokens"]} in / {e.Data["outputTokens"]} out tokens]";
+    }
+
     if (e.Type == RunEventType.RetryScheduled)
     {
         detail = $"retry in {e.Data["delayMs"]}ms (attempt {e.Data["nextAttempt"]}): {detail}";

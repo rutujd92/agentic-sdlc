@@ -1,0 +1,8 @@
+{
+  "nodeId": "design",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"approach\": \"Add a minimal API endpoint group in UrlShortener.Api (VersionEndpoints.MapVersionEndpoints) returning VersionResponse(Version) read from AssemblyInformationalVersionAttribute. Map it in Program.cs after MapLinkEndpoints.\", \"impactedFiles\": [\"src/UrlShortener.Api/VersionEndpoints.cs\", \"src/UrlShortener.Api/Program.cs\", \"tests/UrlShortener.Tests/Api/VersionEndpointTests.cs\", \"README.md\"], \"apiChanges\": \"GET /api/version -> 200 application/json {\\\"version\\\": string}. Types: UrlShortener.Api.VersionEndpoints, UrlShortener.Api.VersionResponse(string Version).\", \"risks\": [\"Version string may reveal build metadata; acceptable for an internal service\"], \"requiresMigration\": false, \"migrationName\": \"\"}"
+}

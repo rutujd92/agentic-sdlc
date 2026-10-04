@@ -4,4 +4,8 @@
     <ProjectReference Include="..\Orchestrator.Core\Orchestrator.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Anthropic" Version="12.53.0" />
+  </ItemGroup>
+
 </Project>

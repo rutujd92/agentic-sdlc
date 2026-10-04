@@ -1,0 +1,8 @@
+{
+  "nodeId": "requirements",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"problem\": \"Operators cannot tell which build of the API is deployed.\", \"acceptanceCriteria\": [\"GET /api/version returns 200 with JSON {\\\"version\\\": \\\"<informational version>\\\"}\", \"The endpoint needs no authentication and is not rate limited\"], \"assumptions\": [\"The assembly informational version is the build identifier\"], \"openQuestions\": [], \"outOfScope\": [\"Git commit hash\", \"Health/readiness changes\"]}"
+}

@@ -1,0 +1,4 @@
+{
+  "name": "smoke",
+  "changeRequest": "Add a GET /api/version endpoint that returns the API's informational version as JSON, so operators can confirm which build is deployed."
+}

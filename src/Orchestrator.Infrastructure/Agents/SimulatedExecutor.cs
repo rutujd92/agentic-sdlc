@@ -65,9 +65,9 @@ public sealed class SimulatedExecutor(
             ? result with
             {
                 Plan = new GraphChange(
-                    [new WorkflowNode("migration", NodeKind.Migration) { DependsOn = [context.Node.Id], Risk = RiskLevel.High, Description = "Add clicks table." }],
-                    [new DependencyEdge("implement", "migration")],
-                    "Design requires a schema change: the clicks table must exist before the implementation uses it."),
+                    [new WorkflowNode("migration", NodeKind.Migration) { DependsOn = ["implement"], Risk = RiskLevel.High, Description = "AddClicks" }],
+                    [new DependencyEdge("validate", "migration")],
+                    "Design changes the EF Core model; adding migration 'AddClicks' (generated after implementation, requires approval)."),
             }
             : result;
     }
