@@ -1,0 +1,23 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{csproj,props,targets,json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+# EF Core migrations are generated code: keep them out of analyzer warnings.
+[**/Migrations/*.cs]
+generated_code = true
+
+# Test names use Given_When_Then style underscores.
+[tests/**.cs]
+dotnet_diagnostic.CA1707.severity = none
