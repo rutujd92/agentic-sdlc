@@ -4,9 +4,11 @@ using Orchestrator.Core.Events;
 using Orchestrator.Core.Execution;
 using Orchestrator.Core.Governance;
 using Orchestrator.Core.Graph;
+using Orchestrator.Core.Metrics;
 using Orchestrator.Core.Planning;
 using Orchestrator.Core.State;
 using Orchestrator.Infrastructure.Agents;
+using Orchestrator.Infrastructure.Reporting;
 using Orchestrator.Infrastructure.Storage;
 using Orchestrator.Infrastructure.Workspace;
 
@@ -37,6 +39,11 @@ switch (args.FirstOrDefault())
         return 0;
     case "status" when args.Length >= 2:
         return await StatusAsync(args[1]);
+    case "report" when args.Length >= 2:
+        Console.WriteLine($"Report: {await WriteReportAsync(args[1])}");
+        return 0;
+    case "metrics":
+        return await MetricsAsync();
     default:
         Console.WriteLine("Usage: orchestrator <command>");
         Console.WriteLine();
@@ -56,6 +63,8 @@ switch (args.FirstOrDefault())
         Console.WriteLine("  stop <runId>                       Safe-stop a running run at the next node boundary");
         Console.WriteLine("  resume <runId> [--delay <ms>]      Continue a stopped run from its event log");
         Console.WriteLine("  status <runId>                     Rebuild and show a run's state from its event log");
+        Console.WriteLine("  report <runId>                     Write runs/<runId>/report.html (DAG, metrics, audit trail, artifacts)");
+        Console.WriteLine("  metrics                            Reliability metrics across all runs");
         return args.Length == 0 ? 0 : 1;
 }
 
@@ -90,7 +99,7 @@ async Task<int> StartAsync(RunConfig config, string changeRequest)
     var started = DateTimeOffset.UtcNow;
     var (workflow, checkpoints) = await Workflows.BuildAsync(config, Directory.GetCurrentDirectory(), runsRoot, runId, policyPath);
     var state = await CreateEngine(started, checkpoints).RunAsync(runId, changeRequest, workflow, CancellationToken.None);
-    return Summarize(runId, state, started);
+    return await SummarizeAsync(runId, state, started);
 }
 
 async Task<int> ResumeAsync(string runId, TimeSpan delay)
@@ -107,7 +116,7 @@ async Task<int> ResumeAsync(string runId, TimeSpan delay)
     var config = await RunConfig.LoadAsync(runsRoot, runId);
     var (workflow, checkpoints) = await Workflows.BuildAsync(config, Directory.GetCurrentDirectory(), runsRoot, runId, policyPath);
     var state = await CreateEngine(started, checkpoints).ResumeAsync(runId, workflow, CancellationToken.None);
-    return Summarize(runId, state, started);
+    return await SummarizeAsync(runId, state, started);
 }
 
 async Task<int> DecideAsync(string runId, string nodeId, bool approve, string? text)
@@ -181,11 +190,53 @@ OrchestrationEngine CreateEngine(DateTimeOffset started, ICheckpointStore? check
     checkpoints,
     new FileStopSignal(runsRoot));
 
-int Summarize(string runId, RunState state, DateTimeOffset started)
+async Task<string> WriteReportAsync(string runId)
+{
+    var events = await new JsonlEventStore(runsRoot).ReadAsync(runId, CancellationToken.None);
+    var artifacts = await new FileArtifactStore(runsRoot).ListAsync(runId, CancellationToken.None);
+    var path = Path.Combine(runsRoot, runId, "report.html");
+    await File.WriteAllTextAsync(path, RunReport.Render(events, artifacts));
+    return path;
+}
+
+async Task<int> MetricsAsync()
+{
+    var store = new JsonlEventStore(runsRoot);
+    var runs = new List<RunMetrics>();
+    foreach (var dir in Directory.Exists(runsRoot) ? Directory.GetDirectories(runsRoot) : [])
+    {
+        var events = await store.ReadAsync(Path.GetFileName(dir), CancellationToken.None);
+        if (events.Count > 0)
+        {
+            runs.Add(RunMetrics.From(events));
+        }
+    }
+
+    var total = AggregateMetrics.From(runs);
+    Console.WriteLine($"Runs: {total.Runs} ({total.FinishedRuns} finished, {total.Runs - total.FinishedRuns} paused/stopped)");
+    Console.WriteLine($"Success rate:        {total.SuccessRate:P0}");
+    Console.WriteLine($"Rollback frequency:  {total.RollbackFrequency:P0}");
+    Console.WriteLine($"Retry rate:          {total.RetryRate:P1} of attempts");
+    Console.WriteLine($"MTTR:                {(total.MeanTimeToRecovery is { } mttr ? $"{mttr.TotalSeconds:0.0}s" : "n/a")}");
+    Console.WriteLine($"Mean end-to-end:     {(total.MeanEndToEndLatency is { } e2e ? $"{e2e.TotalSeconds:0.0}s" : "n/a")}");
+    Console.WriteLine($"Human wait (total):  {total.TotalHumanWait.TotalMinutes:0.0}m");
+    Console.WriteLine($"Tokens in / out:     {total.InputTokens:N0} / {total.OutputTokens:N0}");
+    Console.WriteLine();
+    Console.WriteLine($"{"Run",-24} {"Status",-11} {"E2E",8} {"Attempts",9} {"Retries",8} {"Rollbacks",10} {"Policy",7} {"Approvals",10}");
+    foreach (var r in runs.OrderBy(r => r.RunId, StringComparer.Ordinal))
+    {
+        Console.WriteLine($"{r.RunId,-24} {r.Status,-11} {r.EndToEndLatency.TotalSeconds,7:0.0}s {r.Attempts,9} {r.Retries,8} {r.Rollbacks,10} {r.PolicyViolations,7} {r.ApprovalsRequested,10}");
+    }
+
+    return 0;
+}
+
+async Task<int> SummarizeAsync(string runId, RunState state, DateTimeOffset started)
 {
     Console.WriteLine();
     Console.WriteLine($"Result: {state.Status}  ({(DateTimeOffset.UtcNow - started).TotalSeconds:0.0}s)");
     Console.WriteLine($"Event log: {Path.Combine(runsRoot, runId, "events.jsonl")}");
+    Console.WriteLine($"Report:    {await WriteReportAsync(runId)}");
     if (state.Status == RunStatus.Stopped)
     {
         Console.WriteLine($"Resume with: dotnet run --project src/Orchestrator.Cli -- resume {runId}");

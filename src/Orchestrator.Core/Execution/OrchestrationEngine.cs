@@ -36,7 +36,8 @@ public sealed class OrchestrationEngine(
 
         using var run = new RunExecution(runId, eventStore, timeProvider, _options, new RunState(), workflow.Graph);
         await run.EmitAsync(RunEventType.RunStarted, null, SystemActor, changeRequest, cancellationToken,
-            ("nodes", string.Join(',', workflow.Graph.TopologicalOrder.Select(n => n.Id))));
+            ("nodes", string.Join(',', workflow.Graph.TopologicalOrder.Select(n => n.Id))),
+            ("edges", string.Join(';', workflow.Graph.TopologicalOrder.SelectMany(n => n.DependsOn.Select(d => $"{d}->{n.Id}")))));
 
         return await ExecuteAsync(run, workflow, new ConcurrentDictionary<string, Artifact>(StringComparer.Ordinal), cancellationToken);
     }

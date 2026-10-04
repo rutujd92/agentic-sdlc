@@ -14,6 +14,22 @@ public sealed class FileArtifactStore(string rootDirectory) : IArtifactStore
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(artifact, OrchestratorJson.Options), cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<string, Artifact>> ListAsync(string runId, CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(RunPaths.Artifact(rootDirectory, runId, "x"))!;
+        var artifacts = new Dictionary<string, Artifact>(StringComparer.Ordinal);
+        if (Directory.Exists(directory))
+        {
+            foreach (var file in Directory.GetFiles(directory, "*.json"))
+            {
+                var artifact = JsonSerializer.Deserialize<Artifact>(await File.ReadAllTextAsync(file, cancellationToken), OrchestratorJson.Options)!;
+                artifacts[artifact.NodeId] = artifact;
+            }
+        }
+
+        return artifacts;
+    }
+
     public async Task<Artifact?> GetAsync(string runId, string nodeId, CancellationToken cancellationToken)
     {
         var path = RunPaths.Artifact(rootDirectory, runId, nodeId);
