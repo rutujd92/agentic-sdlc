@@ -8,13 +8,17 @@ public interface INodeExecutor
 }
 
 /// <param name="Inputs">Artifacts of every upstream (transitive) dependency, keyed by node id.</param>
-/// <param name="Attempt">1-based attempt number.</param>
+/// <param name="Attempt">1-based attempt number across primary and fallback executors.</param>
 public sealed record NodeExecutionContext(
     string RunId,
     WorkflowNode Node,
     string ChangeRequest,
     IReadOnlyDictionary<string, Artifact> Inputs,
-    int Attempt);
+    int Attempt)
+{
+    /// <summary>Why the previous attempt failed (executor error or failed gate), so the next attempt can correct it.</summary>
+    public string? Feedback { get; init; }
+}
 
 public sealed record NodeResult(bool Succeeded, Artifact? Output, string? Error, string Actor, string? Rationale)
 {

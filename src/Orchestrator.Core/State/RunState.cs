@@ -44,6 +44,10 @@ public sealed class RunState
 
     public long LastSequence { get; private set; }
 
+    public string? LastCheckpointId { get; private set; }
+
+    public int TotalAttempts => _nodes.Values.Sum(n => n.Attempts);
+
     public static RunState Rebuild(IEnumerable<RunEvent> events)
     {
         ArgumentNullException.ThrowIfNull(events);
@@ -85,6 +89,18 @@ public sealed class RunState
                 break;
             case RunEventType.NodeSkipped:
                 Update(runEvent, n => n with { Status = NodeStatus.Skipped, Error = runEvent.Message });
+                break;
+            case RunEventType.CheckpointCreated:
+                LastCheckpointId = runEvent.Data["checkpointId"];
+                break;
+            case RunEventType.SafeStopped:
+                Status = RunStatus.Stopped;
+                break;
+            case RunEventType.RunResumed:
+                Status = RunStatus.Running;
+                break;
+            case RunEventType.RolledBack:
+                Status = RunStatus.RolledBack;
                 break;
             case RunEventType.RunCompleted:
                 Status = RunStatus.Succeeded;
