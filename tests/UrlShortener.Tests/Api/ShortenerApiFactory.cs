@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -13,7 +14,7 @@ namespace UrlShortener.Tests.Api;
 /// Hosts the real API with PostgreSQL swapped for a temporary SQLite file. A file (not in-memory) is used
 /// so concurrent requests get their own connections, which the parallel-redirect test relies on.
 /// </summary>
-public sealed class ShortenerApiFactory : WebApplicationFactory<Program>
+public sealed class ShortenerApiFactory(int createLinksPermitLimit = 1_000) : WebApplicationFactory<Program>
 {
     public const string BaseUrl = "https://sho.rt";
 
@@ -24,6 +25,8 @@ public sealed class ShortenerApiFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:Shortener", "Host=unused");
         builder.UseSetting("Shortener:BaseUrl", BaseUrl);
+        builder.UseSetting("RateLimiting:CreateLinks:PermitLimit", createLinksPermitLimit.ToString(CultureInfo.InvariantCulture));
+        builder.UseSetting("RateLimiting:CreateLinks:WindowSeconds", "60");
 
         builder.ConfigureTestServices(services =>
         {

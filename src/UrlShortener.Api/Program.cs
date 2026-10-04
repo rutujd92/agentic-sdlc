@@ -23,6 +23,8 @@ builder.Services.AddSingleton<IShortCodeGenerator, RandomShortCodeGenerator>();
 builder.Services.AddSingleton(sp => new LinkValidator(sp.GetRequiredService<IOptions<ShortenerOptions>>().Value.BaseUrl.Host));
 builder.Services.AddScoped<LinkService>();
 builder.Services.AddProblemDetails();
+builder.Services.AddCreateLinksRateLimit(builder.Configuration);
+builder.Services.AddHealthChecks().AddDbContextCheck<ShortenerDbContext>();
 
 var app = builder.Build();
 
@@ -33,6 +35,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseStatusCodePages();
+app.UseRateLimiter();
+app.MapHealthChecks("/health");
 app.MapLinkEndpoints();
 
 await app.RunAsync();

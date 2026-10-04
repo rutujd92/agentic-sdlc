@@ -11,7 +11,8 @@ public static class LinkEndpoints
 
     public static IEndpointRouteBuilder MapLinkEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/links", CreateAsync).WithName("CreateLink");
+        app.MapPost("/api/links", CreateAsync).WithName("CreateLink").RequireRateLimiting(CreateLinksRateLimit.PolicyName);
+        app.MapGet("/api/links/{code}/stats", GetStatsAsync).WithName("GetLinkStats");
         app.MapGet(CodeRoute, RedirectAsync).WithName("RedirectLink");
         return app;
     }
@@ -54,6 +55,17 @@ public static class LinkEndpoints
         return TypedResults.Redirect(link.LongUrl);
     }
 
+    private static async Task<Results<Ok<LinkStatsResponse>, ProblemHttpResult>> GetStatsAsync(
+        string code,
+        ILinkRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var link = await repository.GetByCodeAsync(code, cancellationToken);
+        return link is null
+            ? Problem(StatusCodes.Status404NotFound, "Link not found", $"No link exists for '{code}'.")
+            : TypedResults.Ok(new LinkStatsResponse(link.Code, link.LongUrl, link.CreatedAt, link.ClickCount));
+    }
+
     private static Created<CreateLinkResponse> Created(Link link, Uri baseUrl)
     {
         var shortUrl = $"{baseUrl.ToString().TrimEnd('/')}/{link.Code}";
@@ -67,3 +79,5 @@ public static class LinkEndpoints
 public sealed record CreateLinkRequest(string? Url, string? Alias);
 
 public sealed record CreateLinkResponse(string Code, string ShortUrl, string LongUrl);
+
+public sealed record LinkStatsResponse(string Code, string LongUrl, DateTimeOffset CreatedAt, long ClickCount);
