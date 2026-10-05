@@ -77,7 +77,14 @@ public sealed class MigrationExecutor(GitWorktree worktree) : INodeExecutor
         ArgumentNullException.ThrowIfNull(context);
         var name = context.Node.Description ?? throw new InvalidOperationException("Migration node needs a name in Description.");
 
+        // A fresh worktree has no restored packages yet (migration runs before validate builds anything).
         await ProcessRunner.RunAsync("dotnet", worktree.Path, ["tool", "restore"], cancellationToken);
+        var restore = await ProcessRunner.RunAsync("dotnet", worktree.Path, ["restore", "src/UrlShortener.Api/UrlShortener.Api.csproj"], cancellationToken);
+        if (!restore.Succeeded)
+        {
+            return NodeResult.Failure($"dotnet restore failed:\n{(restore.StandardError + restore.StandardOutput).Trim()}", Actor);
+        }
+
         var add = await ProcessRunner.RunAsync("dotnet", worktree.Path,
             ["ef", "migrations", "add", name, "--project", "src/UrlShortener.Infrastructure", "--startup-project", "src/UrlShortener.Api",
              "--output-dir", "Persistence/Migrations"], cancellationToken);
