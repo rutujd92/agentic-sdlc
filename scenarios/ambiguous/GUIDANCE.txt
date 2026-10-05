@@ -1,0 +1,1 @@
+Safer means: block links to known-malicious domains using a configurable denylist (Shortener:BlockedDomains), including their subdomains, rejected at creation with 400. No expiry or preview page for now.

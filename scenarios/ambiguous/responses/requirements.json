@@ -1,0 +1,8 @@
+{
+  "nodeId": "requirements",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"problem\": \"The request 'make the links safer' does not say which risk to reduce; several different features fit.\", \"acceptanceCriteria\": [\"To be defined once the open questions are answered\"], \"assumptions\": [\"Existing protections stay: http/https only, no user-info URLs, no self-links, rate-limited creation\"], \"openQuestions\": [\"Which threat matters most: links to malicious sites (phishing/malware), stale links that should expire, or users not seeing where a link goes (preview page)?\", \"If malicious sites: should we use a configurable denylist or an external reputation service (e.g. Google Safe Browsing, needs an API key and adds latency)?\", \"Should unsafe links be rejected at creation, or blocked/warned at redirect time (which also catches targets that turn malicious later)?\"], \"outOfScope\": []}"
+}

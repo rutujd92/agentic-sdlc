@@ -64,7 +64,7 @@ Directory.Build.props
 1. Work on **one task at a time** from the current workflow file in `docs/workflows/`.
 2. **Tests first:** write the tests for the task, run them, and confirm they fail before implementing.
 3. Implement until `dotnet test` passes for the whole solution.
-4. Summarize the change (files touched, tests added) and **wait for approval** before committing.
+4. Work on a branch per task, commit in small green steps, open a PR with the summary (files, tests, decisions) and merge once CI (build, test, gitleaks) passes.
 5. Commit messages follow Conventional Commits, e.g. `feat(core): add short-code generator`.
 6. Never commit secrets, passwords, connection strings with passwords, or API keys.
 7. Respect the task's time box. If a task overruns by more than 50%, stop and say so instead of expanding scope.
@@ -83,7 +83,7 @@ Directory.Build.props
 ## Configuration
 
 - `Shortener:BaseUrl` builds `shortUrl`. Never derive it from the request `Host` header.
-- `Anthropic:ApiKey` comes from user-secrets or the environment only. `Orchestrator:Provider` is `replay` (default) or `claude`.
+- The Anthropic API key comes from the `ANTHROPIC_API_KEY` environment variable only. Scenarios replay recorded responses by default; `--live` calls Claude.
 
 ## API Conventions
 
@@ -98,7 +98,7 @@ Directory.Build.props
 - Custom aliases: 3–30 characters, letters, digits, `-` and `_`, case-sensitive. Reserved words are rejected: `api`, `health`, `openapi`, `swagger`, `favicon.ico`.
 - Short codes come from `RandomNumberGenerator.GetString` (cryptographically secure, no modulo bias).
 - Rate limit link creation with the ASP.NET Core built-in rate limiter.
-- Run `gitleaks detect` before every push.
+- Run `gitleaks git --staged` before every commit (CI also scans the full history).
 
 ## Orchestrator Rules
 
@@ -120,7 +120,7 @@ cp .env.example .env && docker compose up -d
 dotnet build
 dotnet test
 dotnet run --project src/UrlShortener.Api
-dotnet run --project src/Orchestrator.Cli -- run scenarios/greenfield
+dotnet run --project src/Orchestrator.Cli -- run --scenario scenarios/greenfield
 dotnet run --project src/Orchestrator.Cli -- approve <runId> <nodeId>
 dotnet run --project src/Orchestrator.Cli -- report <runId>
 ```
