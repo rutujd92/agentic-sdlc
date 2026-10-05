@@ -6,6 +6,7 @@ The system it builds and changes is a small **URL Shortener** (.NET 10, PostgreS
 
 | | |
 |---|---|
+| **Demo run reports (no setup needed)** | **https://rutujd92.github.io/agentic-sdlc/demo/** |
 | Architecture and control flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Engineering summary (plan, risks, trade-offs, assumptions, limitations) | [docs/SUMMARY.md](docs/SUMMARY.md) |
 | Design decisions | [docs/adr/](docs/adr/) |
