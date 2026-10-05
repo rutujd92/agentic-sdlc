@@ -1,0 +1,8 @@
+{
+  "nodeId": "docs",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"summary\": \"Changelog security entry with configuration.\", \"files\": [{\"path\": \"CHANGELOG.md\", \"content\": \"# Changelog\\n\\n## Unreleased\\n\\n### Security\\n- Links to known-malicious domains are rejected at creation (`400`, \\\"URL points to a blocked domain.\\\").\\n  Configure the denylist with `Shortener:BlockedDomains` (array); a listed domain also blocks its subdomains.\\n\"}]}"
+}

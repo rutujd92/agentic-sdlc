@@ -1,0 +1,8 @@
+{
+  "nodeId": "requirements",
+  "feedback": "Safer means: block links to known-malicious domains using a configurable denylist (Shortener:BlockedDomains), including their subdomains, rejected at creation with 400. No expiry or preview page for now.",
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"problem\": \"Users can create short links to known-malicious domains, which lends them our domain's credibility in phishing and malware campaigns.\", \"acceptanceCriteria\": [\"Shortener:BlockedDomains (array) configures the denylist; empty by default\", \"Creating a link whose host is a listed domain or any subdomain returns 400 ProblemDetails with detail 'URL points to a blocked domain.'\", \"Matching is case-insensitive and ignores a trailing dot; look-alikes (notevil.example) are not blocked\", \"Links to other domains behave exactly as before\"], \"assumptions\": [\"The denylist is maintained by operators via configuration\", \"Existing links are not re-validated\"], \"openQuestions\": [], \"outOfScope\": [\"Link expiry\", \"Preview/interstitial page\", \"External reputation services\", \"Re-validating existing links at redirect time\"]}"
+}

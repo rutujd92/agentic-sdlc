@@ -1,0 +1,8 @@
+{
+  "nodeId": "release-readiness",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"ready\": true, \"summary\": \"Ambiguity resolved by a human clarification; denylist implemented in Core with configuration, 11 new tests and the full suite pass.\", \"checklist\": [{\"item\": \"Open questions answered by a human before design\", \"status\": \"pass\"}, {\"item\": \"Blocked domain and subdomains rejected with 400\", \"status\": \"pass\"}, {\"item\": \"Look-alikes and other domains unaffected\", \"status\": \"pass\"}, {\"item\": \"Configurable, empty by default\", \"status\": \"pass\"}, {\"item\": \"Build, tests and secret scan green\", \"status\": \"pass\"}], \"risks\": [\"Denylist maintenance is manual\", \"Existing links are not re-validated\"]}"
+}

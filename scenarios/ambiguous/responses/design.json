@@ -1,0 +1,8 @@
+{
+  "nodeId": "design",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"approach\": \"Extend the Core LinkValidator with an optional blockedDomains constructor parameter (normalized to a lower-case FrozenSet) and a suffix walk over the host labels, so a listed domain blocks itself and its subdomains but not look-alikes. Add ShortenerOptions.BlockedDomains (IReadOnlyList<string>, default empty) bound from configuration, and pass it when Program.cs constructs the singleton LinkValidator. LinkService and the endpoints already map InvalidUrl to 400 ProblemDetails, so no API code changes. The constructor parameter is optional, so existing callers and tests are unaffected.\", \"impactedFiles\": [\"src/UrlShortener.Core/Links/LinkValidator.cs\", \"src/UrlShortener.Api/ShortenerOptions.cs\", \"src/UrlShortener.Api/Program.cs\", \"tests/UrlShortener.Tests/Core/LinkValidatorDenylistTests.cs\", \"tests/UrlShortener.Tests/Api/BlockedDomainsTests.cs\", \"CHANGELOG.md\"], \"apiChanges\": \"No new endpoints. POST /api/links returns 400 with detail 'URL points to a blocked domain.' for denylisted hosts. Config: Shortener:BlockedDomains (string array). Code: new LinkValidator(string ownHost, IEnumerable<string>? blockedDomains = null). API tests can set the denylist with WebApplicationFactory.WithWebHostBuilder(b => b.UseSetting(\\\"Shortener:BlockedDomains:0\\\", ...)).\", \"risks\": [\"A static denylist goes stale; a reputation feed can be added behind the same validator later\", \"Existing links to newly listed domains still redirect (re-validation at redirect time is out of scope)\"], \"requiresMigration\": false, \"migrationName\": \"\"}"
+}
