@@ -1,0 +1,4 @@
+{
+  "name": "brownfield",
+  "changeRequest": "Record every click on a short link (time, referrer, user agent) and show the most recent clicks in the stats endpoint, so we can see where traffic comes from."
+}

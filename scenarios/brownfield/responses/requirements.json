@@ -1,0 +1,8 @@
+{
+  "nodeId": "requirements",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"problem\": \"The service only keeps a click counter, so we cannot see where traffic comes from or when.\", \"acceptanceCriteria\": [\"Each redirect stores a click with UTC timestamp, Referer header and User-Agent header\", \"Missing headers are stored as null; values are truncated to safe lengths (referrer 2048, user agent 512)\", \"GET /api/links/{code}/stats includes recentClicks: up to 10 most recent clicks, newest first\", \"The existing clickCount behaviour is unchanged (still atomic)\", \"Clicks are deleted when their link is deleted\"], \"assumptions\": [\"Storing referrer and user agent is acceptable (no personal identifiers such as IP addresses are stored)\", \"10 recent clicks are enough for the stats view\"], \"openQuestions\": [], \"outOfScope\": [\"Aggregations (per day, per referrer)\", \"Retention / purge policy\", \"IP or geo tracking\"]}"
+}
