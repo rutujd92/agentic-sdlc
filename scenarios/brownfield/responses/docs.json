@@ -1,0 +1,8 @@
+{
+  "nodeId": "docs",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"summary\": \"Changelog entry including the database migration.\", \"files\": [{\"path\": \"CHANGELOG.md\", \"content\": \"# Changelog\\n\\n## Unreleased\\n\\n### Added\\n- Click analytics: every redirect records a click (time, referrer, user agent) in the new `clicks` table.\\n- `GET /api/links/{code}/stats` now returns `recentClicks` (the 10 most recent, newest first).\\n\\n### Database\\n- Migration `AddClickEvents` creates `clicks` (FK to `links`, cascade delete, index on `LinkId, Id`).\\n\"}]}"
+}

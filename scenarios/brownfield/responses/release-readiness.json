@@ -1,0 +1,8 @@
+{
+  "nodeId": "release-readiness",
+  "feedback": null,
+  "model": "hand-written",
+  "inputTokens": 0,
+  "outputTokens": 0,
+  "response": "{\"ready\": true, \"summary\": \"Click analytics implemented across Core, Infrastructure and Api with an additive, human-approved migration; 5 new tests plus the full suite pass.\", \"checklist\": [{\"item\": \"Clicks stored with timestamp, referrer, user agent\", \"status\": \"pass\"}, {\"item\": \"Null and oversized headers handled\", \"status\": \"pass\"}, {\"item\": \"recentClicks: 10 newest first\", \"status\": \"pass\"}, {\"item\": \"clickCount unchanged and atomic\", \"status\": \"pass\"}, {\"item\": \"Migration reviewed and approved\", \"status\": \"pass\"}, {\"item\": \"Build, tests and secret scan green\", \"status\": \"pass\"}], \"risks\": [\"No retention policy for clicks yet\", \"Apply the migration before deploying the new API version\"]}"
+}
